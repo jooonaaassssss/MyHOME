@@ -17,7 +17,6 @@ from .const import (
     CONF_PLATFORMS,
     CONF_ENTITY,
     CONF_ENTITIES,
-    CONF_GATEWAY,
     CONF_WORKER_COUNT,
     CONF_FILE_PATH,
     CONF_GENERATE_EVENTS,
@@ -79,19 +78,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         )
         LOGGER.warning("Migrating config entry unique_id to %s", entry.unique_id)
 
-    hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY] = MyHOMEGatewayHandler(
+    gateway_handler = MyHOMEGatewayHandler(
         hass=hass, config_entry=entry, generate_events=_generate_events
     )
+    hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY] = gateway_handler
 
     try:
-        tests_results = await hass.data[DOMAIN][entry.data[CONF_MAC]][
-            CONF_ENTITY
-        ].test()
+        tests_results = await gateway_handler.test()
     except OSError as ose:
-        _gateway_handler = hass.data[DOMAIN].pop(CONF_GATEWAY)
-        _host = _gateway_handler.gateway.host
+        del hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
         raise ConfigEntryNotReady(
-            f"Gateway cannot be reached at {_host}, make sure its address is correct."
+            f"Gateway cannot be reached at {gateway_handler.gateway.host}, "
+            "make sure its address is correct."
         ) from ose
 
     if not tests_results["Success"]:
