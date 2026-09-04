@@ -224,7 +224,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             name=f"{DOMAIN} {entry.data[CONF_MAC]} event listener",
         )
 
-    hass.bus.async_listen("myhome_force_restart_event_listener", _handle_force_restart_event_listener)
+    # async_listen returns the unsubscribe callback; without registering it the
+    # handler survives the unload and every reload stacks another one, so a
+    # single SSDP announcement would restart the listener once per reload.
+    entry.async_on_unload(
+        hass.bus.async_listen(
+            "myhome_force_restart_event_listener",
+            _handle_force_restart_event_listener,
+        )
+    )
 
 
     async def handle_sync_time(call):
