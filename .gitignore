@@ -136,3 +136,6 @@ dmypy.json
 
 #Pylint
 .pylintrc
+
+# Ruff
+.ruff_cache/

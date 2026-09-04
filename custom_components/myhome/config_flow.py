@@ -13,7 +13,6 @@ from voluptuous import (
     All,
     In,
     Range,
-    IsFile,
 )
 from homeassistant.config_entries import (
     CONN_CLASS_LOCAL_PUSH,

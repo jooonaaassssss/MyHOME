@@ -13,21 +13,10 @@ from homeassistant.const import (
     CONF_FRIENDLY_NAME,
 )
 from homeassistant.components.light import DOMAIN as LIGHT
-from homeassistant.components.switch import (
-    SwitchDeviceClass,
-    DOMAIN as SWITCH,
-)
 from homeassistant.components.button import DOMAIN as BUTTON
-from homeassistant.components.cover import DOMAIN as COVER
-from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
-    DOMAIN as BINARY_SENSOR,
-)
 from homeassistant.components.sensor import (
-    SensorDeviceClass,
     DOMAIN as SENSOR,
 )
-from homeassistant.components.climate import DOMAIN as CLIMATE
 
 from OWNd.connection import OWNSession, OWNEventSession, OWNCommandSession, OWNGateway
 from OWNd.message import (

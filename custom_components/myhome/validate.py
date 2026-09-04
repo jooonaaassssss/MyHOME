@@ -82,7 +82,7 @@ class General(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v == "0":
+        if isinstance(v, str) and v == "0":
             return v
         else:
             raise Invalid(f"Invalid General WHERE {v}, it must be 0.")
@@ -96,7 +96,7 @@ class Area(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v in ["00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
+        if isinstance(v, str) and v in ["00", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]:
             return v
         else:
             raise Invalid(f"Invalid Area WHERE {v}, it must be a string in [00, 1-9, 10].")
@@ -110,7 +110,7 @@ class Group(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
+        if isinstance(v, str) and v.startswith("#") and v[1:].isdigit() and int(v[1:]) >= 1 and int(v[1:]) <= 255:
             return f"#{int(v[1:])}"
         else:
             raise Invalid(f"Invalid Group WHERE {v}, it must be a string like '#[1-255]'.")
@@ -124,7 +124,7 @@ class PointToPoint(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.isdigit():
+        if isinstance(v, str) and v.isdigit():
             _length = len(v)
             if _length == 2 or _length == 4:
                 _a = v[0 : _length // 2]
@@ -147,7 +147,7 @@ class SpecialWhere(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.isdigit():
+        if isinstance(v, str) and v.isdigit():
             return v
         else:
             raise Invalid(f"Invalid WHERE {v}, it must be a string of digits.")
@@ -161,7 +161,7 @@ class BusInterface(object):
         self.msg = msg
 
     def __call__(self, v):
-        if type(v) == str and v.isdigit() and len(v) == 2:
+        if isinstance(v, str) and v.isdigit() and len(v) == 2:
             if int(v) > 15:
                 raise Invalid(f"Invalid Bus Interface number {v}, it must be between 00 and 15.")
         elif v is not None:
