@@ -2,6 +2,9 @@
 # platform, so a Windows checkout no longer rewrites whole files on commit.
 * text=auto eol=lf
 
+# The licence document is redistributed exactly as received, byte for byte.
+LICENSE -text
+
 # Files that must never be touched by the text filters.
 *.png binary
 *.jpg binary

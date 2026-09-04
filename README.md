@@ -121,4 +121,5 @@ FOR A PARTICULAR PURPOSE. See the [LICENSE](LICENSE) file for the full text.
 The complete corresponding source for this version is this repository:
 <https://github.com/jooonaaassssss/MyHOME>.
 
-The `LICENSE` file is carried over from the original project unchanged.
+The `LICENSE` file is carried over from the original project byte for byte;
+`.gitattributes` keeps it out of the repository's line-ending normalisation.
