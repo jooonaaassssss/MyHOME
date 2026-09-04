@@ -1,7 +1,7 @@
 """ MyHOME integration. """
 
-import aiofiles
 import yaml
+from voluptuous import Invalid
 
 from OWNd.message import OWNCommand, OWNGatewayCommand
 
@@ -116,12 +116,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         else False
     )
 
+    def _load_config():
+        """Read and validate the configuration file off the event loop."""
+        with open(_config_file_path, encoding="utf-8") as yaml_file:
+            return config_schema(yaml.safe_load(yaml_file))
+
     try:
-        async with aiofiles.open(_config_file_path, mode="r") as yaml_file:
-            _validated_config = config_schema(yaml.safe_load(await yaml_file.read()))
+        _validated_config = await hass.async_add_executor_job(_load_config)
     except FileNotFoundError as err:
         raise ConfigEntryError(
             f"Configuration file '{_config_file_path}' is not present."
+        ) from err
+    except (Invalid, yaml.YAMLError) as err:
+        raise ConfigEntryError(
+            f"Configuration file '{_config_file_path}' is not valid: {err}"
         ) from err
 
     if entry.data[CONF_MAC] not in _validated_config:
