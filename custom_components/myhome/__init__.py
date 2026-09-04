@@ -224,10 +224,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             handler.listening_loop(),
             name=f"{DOMAIN} {entry.data[CONF_MAC]} event listener",
         )
-            
+
     hass.bus.async_listen("myhome_force_restart_event_listener", _handle_force_restart_event_listener)
 
-    
+
     async def handle_sync_time(call):
         gateway = call.data.get(ATTR_GATEWAY, None)
         if gateway is None:
@@ -321,5 +321,3 @@ async def async_unload_entry(hass, entry):
         hass.services.async_remove(DOMAIN, "send_message")
 
     return await gateway_handler.close_listener()
-
-

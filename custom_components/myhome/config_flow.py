@@ -363,7 +363,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
         # The gateway just re-announced itself, its event connection is stale.
         LOGGER.debug("Gateway announced itself over SSDP, requesting a listener restart.")
         self.hass.bus.async_fire("myhome_force_restart_event_listener")
-      
+
         if gateway.port is not None:
             updatable[CONF_PORT] = gateway.port
 
@@ -452,5 +452,3 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             ),
             errors=errors,
         )
-
-
