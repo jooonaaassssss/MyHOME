@@ -54,7 +54,7 @@ The upstream wiki still applies to this fork; the YAML syntax is unchanged.
 
 ## Changes in this fork
 
-Modified on **4 September 2026**, released as 0.9.5. The full record is in the
+Modified on **4 September 2026**, released as 0.9.6. The full record is in the
 Git history; this is the summary.
 
 **Setup no longer fails on Home Assistant Core 2026.9.** That release swapped
@@ -84,6 +84,23 @@ is untouched.
 - The options dialog could not open: the handler assigned to
   `OptionsFlow.config_entry`, a read-only property since 2026.9.
 - A debug call in the command worker raised inside `logging`.
+
+**Stability**
+
+- The event listener had no error handling. Any exception out of `connect()` or
+  `get_next()` ended the task silently: commands still went out over the
+  separate command session, but no state update ever arrived again until Home
+  Assistant was restarted. Both workers now reconnect with a capped backoff.
+  This is the failure the upstream README describes and the SSDP restart in
+  this fork's ancestry works around.
+- Entities report `unavailable` while the gateway cannot be reached, instead of
+  serving their last known values indefinitely.
+- The SSDP restart handler was never unsubscribed, so every reload left another
+  one attached and one announcement restarted the listener once per reload.
+- `aiofiles` was imported but never declared as a requirement. The
+  configuration file is now read in the executor, with no dependency at all,
+  and a malformed file raises a readable error instead of a raw traceback.
+- `os.path.isfile` no longer blocks the event loop in the options flow.
 
 **Deprecations**
 
