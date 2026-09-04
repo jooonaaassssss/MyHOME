@@ -1,5 +1,6 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
+import contextlib
 from typing import Dict, List
 
 from homeassistant.const import (
@@ -131,11 +132,31 @@ class MyHOMEGatewayHandler:
         return await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
 
     async def listening_loop(self):
+        """Run the event listener until it is stopped or cancelled.
+
+        The loop body lives in ``_listen`` so that the session is closed here on
+        every exit path, cancellation included.
+        """
         self._terminate_listener = False
 
+        _event_session = OWNEventSession(gateway=self.gateway, logger=LOGGER)
+        try:
+            await self._listen(_event_session)
+        finally:
+            self.is_connected = False
+            try:
+                await _event_session.close()
+            except Exception:
+                LOGGER.debug(
+                    "%s Event session did not close cleanly.",
+                    self.log_id,
+                    exc_info=True,
+                )
+            LOGGER.debug("%s Listening worker stopped.", self.log_id)
+
+    async def _listen(self, _event_session: OWNEventSession):
         LOGGER.debug("%s Creating listening worker.", self.log_id)
 
-        _event_session = OWNEventSession(gateway=self.gateway, logger=LOGGER)
         await _event_session.connect()
         self.is_connected = True
 
@@ -357,12 +378,6 @@ class MyHOMEGatewayHandler:
                     message,
                 )
 
-        await _event_session.close()
-        self.is_connected = False
-
-        LOGGER.debug("%s Destroying listening worker.", self.log_id)
-        self.listening_worker.cancel()
-
     async def sending_loop(self, worker_id: int):
         self._terminate_sender = False
 
@@ -403,10 +418,27 @@ class MyHOMEGatewayHandler:
         return True
 
     async def close_listener_only(self) -> bool:
+        """Stop the event listener and wait until its worker is really gone.
+
+        Raising the flag on its own is not enough: the loop is parked in
+        ``get_next()`` and only re-reads the flag after the next bus message, so a
+        restart could start a second listener on the same connection while the old
+        one was still running.
+        """
         LOGGER.debug("%s Closing event listener only", self.log_id)
         self._terminate_listener = True
+        await self._stop_worker(self.listening_worker)
+        self.listening_worker = None
         return True
-    
+
+    async def _stop_worker(self, worker: asyncio.Task | None) -> None:
+        """Cancel a worker task and wait for it to finish."""
+        if worker is None or worker.done():
+            return
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
+
     async def send(self, message: OWNCommand):
         await self.send_buffer.put({"message": message, "is_status_request": False})
         LOGGER.debug(

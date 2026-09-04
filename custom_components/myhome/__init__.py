@@ -200,15 +200,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # Restart the event listener when the gateway re-announces itself over SSDP.
     async def _handle_force_restart_event_listener(event):
-        handler = hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
-        if handler:
-            LOGGER.debug("Restarting the event listener after an SSDP announcement.")
-            await hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].close_listener_only()
-            await hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].listening_loop()
-        else:
+        handler = hass.data[DOMAIN].get(entry.data[CONF_MAC], {}).get(CONF_ENTITY)
+        if handler is None:
             LOGGER.warning(
                 "No gateway handler found, cannot restart the event listener."
             )
+            return
+
+        LOGGER.debug("Restarting the event listener after an SSDP announcement.")
+        await handler.close_listener_only()
+        handler.listening_worker = entry.async_create_background_task(
+            hass,
+            handler.listening_loop(),
+            name=f"{DOMAIN} {entry.data[CONF_MAC]} event listener",
+        )
             
     hass.bus.async_listen("myhome_force_restart_event_listener", _handle_force_restart_event_listener)
 
