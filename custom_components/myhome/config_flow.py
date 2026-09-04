@@ -360,8 +360,8 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             CONF_FIRMWARE: gateway.firmware,
         }
 
-        # rdr - listener restart request
-        LOGGER.info("rdr - requesting listener restart")
+        # The gateway just re-announced itself, its event connection is stale.
+        LOGGER.debug("Gateway announced itself over SSDP, requesting a listener restart.")
         self.hass.bus.async_fire("myhome_force_restart_event_listener")
       
         if gateway.port is not None:

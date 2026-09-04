@@ -379,8 +379,7 @@ class MyHOMEGatewayHandler:
             task = await self.send_buffer.get()
             LOGGER.debug(
                 "%s Message `%s` was successfully unqueued by worker %s.",
-                self.name,
-                self.gateway.host,
+                self.log_id,
                 task["message"],
                 worker_id,
             )
@@ -397,14 +396,14 @@ class MyHOMEGatewayHandler:
         self.sending_workers[worker_id].cancel()
 
     async def close_listener(self) -> bool:
-        LOGGER.info("%s Closing event listener", self.log_id)
+        LOGGER.debug("%s Closing event listener and command workers", self.log_id)
         self._terminate_sender = True
         self._terminate_listener = True
 
         return True
 
     async def close_listener_only(self) -> bool:
-        LOGGER.info("%s Closing event listener only", self.log_id)
+        LOGGER.debug("%s Closing event listener only", self.log_id)
         self._terminate_listener = True
         return True
     

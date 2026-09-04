@@ -200,15 +200,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     # Defining the services
 
-    # rdr - triggered by an ssdp event restart the listener
+    # Restart the event listener when the gateway re-announces itself over SSDP.
     async def _handle_force_restart_event_listener(event):
         handler = hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
         if handler:
-            LOGGER.info("Forzato riavvio del listener eventi (unico gateway)")
+            LOGGER.debug("Restarting the event listener after an SSDP announcement.")
             await hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].close_listener_only()
             await hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].listening_loop()
         else:
-            LOGGER.warning("Nessun handler trovato per riavvio evento")
+            LOGGER.warning(
+                "No gateway handler found, cannot restart the event listener."
+            )
             
     hass.bus.async_listen("myhome_force_restart_event_listener", _handle_force_restart_event_listener)
 
@@ -288,7 +290,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 async def async_unload_entry(hass, entry):
     """Unload a config entry."""
 
-    LOGGER.info("Unloading MyHome entry.")
+    LOGGER.debug("Unloading MyHOME config entry.")
 
     for platform in hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS].keys():
         await hass.config_entries.async_forward_entry_unload(entry, platform)
