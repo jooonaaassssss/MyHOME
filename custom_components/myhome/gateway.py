@@ -1,7 +1,7 @@
 """Code to handle a MyHome Gateway."""
 import asyncio
 import contextlib
-from typing import Dict, List
+import random
 
 from homeassistant.const import (
     CONF_ENTITIES,
@@ -59,6 +59,20 @@ from .button import (
 )
 
 
+# Delay before each reconnection attempt, in seconds. The last value repeats.
+RECONNECT_DELAYS = (5, 15, 30, 60, 120, 300)
+
+
+def reconnect_delay(failures: int) -> float:
+    """Return the backoff for the given number of consecutive failures.
+
+    A little jitter is added so several gateways, or several workers on one
+    gateway, do not all retry in the same instant.
+    """
+    base = RECONNECT_DELAYS[min(failures, len(RECONNECT_DELAYS)) - 1]
+    return base + random.uniform(0, base * 0.1)
+
+
 class MyHOMEGatewayHandler:
     """Manages a single MyHOME Gateway."""
 
@@ -85,11 +99,11 @@ class MyHOMEGatewayHandler:
         self._terminate_listener = False
         self._terminate_sender = False
         self.is_connected = False
-        self.listening_worker: asyncio.tasks.Task = None
+        self.listening_worker: asyncio.Task | None = None
         # Registry id of the gateway's own device, filled in by async_setup_entry
         # once the device exists. Entities link to it via via_device_id.
-        self.device_registry_id: str = None
-        self.sending_workers: List[asyncio.tasks.Task] = []
+        self.device_registry_id: str | None = None
+        self.sending_workers: list[asyncio.Task] = []
         self.send_buffer = asyncio.Queue()
 
     @property
@@ -120,37 +134,90 @@ class MyHOMEGatewayHandler:
     def firmware(self) -> str:
         return self.gateway.firmware
 
-    async def test(self) -> Dict:
-        return await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
+    async def test(self) -> dict:
+        """Probe the gateway. A successful probe is evidence that it is reachable."""
+        results = await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
+        self._set_connected(bool(results.get("Success")))
+        return results
+
+    def _set_connected(self, connected: bool) -> None:
+        """Record the connection state and refresh the entities that show it."""
+        if self.is_connected == connected:
+            return
+        self.is_connected = connected
+        for _platform in self.hass.data[DOMAIN].get(self.mac, {}).get(CONF_PLATFORMS, {}).values():
+            for _device in _platform.values():
+                for _entity in _device.get(CONF_ENTITIES, {}).values():
+                    if isinstance(_entity, MyHOMEEntity) and _entity.entity_id:
+                        _entity.async_write_ha_state()
+
+    async def _close_session(self, session) -> None:
+        """Close a session without letting that failure mask the original one."""
+        try:
+            await session.close()
+        except Exception:
+            LOGGER.debug(
+                "%s Session did not close cleanly.", self.log_id, exc_info=True
+            )
 
     async def listening_loop(self):
-        """Run the event listener until it is stopped or cancelled.
+        """Keep an event session running for as long as the listener is wanted.
 
-        The loop body lives in ``_listen`` so that the session is closed here on
-        every exit path, cancellation included.
+        ``_listen`` returns only when termination was requested; every other way
+        out is an exception. That exception used to end the task for good, and
+        because nothing awaits the task it was not even reported: commands kept
+        working over the separate command session while no state update ever
+        arrived again until Home Assistant was restarted. Reconnect instead.
         """
         self._terminate_listener = False
+        failures = 0
 
-        _event_session = OWNEventSession(gateway=self.gateway, logger=LOGGER)
-        try:
-            await self._listen(_event_session)
-        finally:
-            self.is_connected = False
+        while not self._terminate_listener:
+            _event_session = OWNEventSession(gateway=self.gateway, logger=LOGGER)
             try:
-                await _event_session.close()
-            except Exception:
-                LOGGER.debug(
-                    "%s Event session did not close cleanly.",
-                    self.log_id,
-                    exc_info=True,
-                )
-            LOGGER.debug("%s Listening worker stopped.", self.log_id)
+                await self._listen(_event_session)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                # Only a real failure makes the gateway unavailable. A cancelled
+                # worker is a deliberate restart or unload, and flipping several
+                # hundred entities to unavailable for the second that takes would
+                # be noise, not information.
+                self._set_connected(False)
+                failures += 1
+                delay = reconnect_delay(failures)
+                if failures == 1:
+                    LOGGER.warning(
+                        "%s Event listener stopped: %s. Reconnecting in %.0f seconds.",
+                        self.log_id,
+                        err,
+                        delay,
+                    )
+                else:
+                    LOGGER.debug(
+                        "%s Event listener still down after %s attempts: %s. "
+                        "Retrying in %.0f seconds.",
+                        self.log_id,
+                        failures,
+                        err,
+                        delay,
+                    )
+            finally:
+                await self._close_session(_event_session)
+
+            if self._terminate_listener:
+                break
+            await asyncio.sleep(delay)
+
+        LOGGER.debug("%s Listening worker stopped.", self.log_id)
 
     async def _listen(self, _event_session: OWNEventSession):
         LOGGER.debug("%s Creating listening worker.", self.log_id)
 
         await _event_session.connect()
-        self.is_connected = True
+        LOGGER.info("%s Event listener connected.", self.log_id)
+        self._set_connected(True)
 
         while not self._terminate_listener:
             message = await _event_session.get_next()
@@ -371,26 +438,51 @@ class MyHOMEGatewayHandler:
                 )
 
     async def sending_loop(self, worker_id: int):
-        """Run a command worker until it is stopped or cancelled.
+        """Keep a command worker running for as long as it is wanted.
 
-        Mirrors ``listening_loop``: the body lives in ``_send_commands`` so the
-        session is closed on every exit path, cancellation included.
+        Mirrors ``listening_loop``. A command worker that died left the
+        integration unable to send anything at all, which is worse than losing
+        the status feed, so it reconnects on the same schedule.
         """
         self._terminate_sender = False
+        failures = 0
 
-        _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
-        try:
-            await self._send_commands(worker_id, _command_session)
-        finally:
+        while not self._terminate_sender:
+            _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
             try:
-                await _command_session.close()
-            except Exception:
-                LOGGER.debug(
-                    "%s Command session did not close cleanly.",
-                    self.log_id,
-                    exc_info=True,
-                )
-            LOGGER.debug("%s Sending worker %s stopped.", self.log_id, worker_id)
+                await self._send_commands(worker_id, _command_session)
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                failures += 1
+                delay = reconnect_delay(failures)
+                if failures == 1:
+                    LOGGER.warning(
+                        "%s Command worker %s stopped: %s. Reconnecting in %.0f seconds.",
+                        self.log_id,
+                        worker_id,
+                        err,
+                        delay,
+                    )
+                else:
+                    LOGGER.debug(
+                        "%s Command worker %s still down after %s attempts: %s. "
+                        "Retrying in %.0f seconds.",
+                        self.log_id,
+                        worker_id,
+                        failures,
+                        err,
+                        delay,
+                    )
+            finally:
+                await self._close_session(_command_session)
+
+            if self._terminate_sender:
+                break
+            await asyncio.sleep(delay)
+
+        LOGGER.debug("%s Sending worker %s stopped.", self.log_id, worker_id)
 
     async def _send_commands(self, worker_id: int, _command_session: OWNCommandSession):
         LOGGER.debug(
@@ -423,6 +515,7 @@ class MyHOMEGatewayHandler:
         for worker in self.sending_workers:
             await self._stop_worker(worker)
         self.sending_workers.clear()
+        self._set_connected(False)
 
         return True
 

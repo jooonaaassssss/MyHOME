@@ -3,7 +3,6 @@ import asyncio
 import ipaddress
 import re
 import os
-from typing import Dict, Optional
 
 from voluptuous import (
     Schema,
@@ -81,9 +80,9 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 
     def __init__(self):
         """Initialize the MyHome flow."""
-        self.gateway_handler: Optional[OWNGateway] = None
-        self.discovered_gateways: Optional[Dict[str, OWNGateway]] = None
-        self._existing_entry: ConfigEntry = None
+        self.gateway_handler: OWNGateway | None = None
+        self.discovered_gateways: dict[str, OWNGateway] | None = None
+        self._existing_entry: ConfigEntry | None = None
 
     async def async_step_user(self, user_input=None):
         """Handle a flow initialized by the user."""
@@ -379,8 +378,8 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
 
     def __init__(self):
         """Initialize MyHome options flow."""
-        self.options: Dict = {}
-        self.data: Dict = {}
+        self.options: dict = {}
+        self.data: dict = {}
 
     async def async_step_init(self, user_input=None):  # pylint: disable=unused-argument
         """Manage the MyHome options."""
@@ -399,7 +398,9 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
         errors = {}
 
         if user_input is not None:
-            if not os.path.isfile(user_input[CONF_FILE_PATH]):
+            if not await self.hass.async_add_executor_job(
+                os.path.isfile, user_input[CONF_FILE_PATH]
+            ):
                 errors[CONF_FILE_PATH] = "invalid_config_path"
 
             self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})

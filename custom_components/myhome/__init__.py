@@ -1,7 +1,7 @@
 """ MyHOME integration. """
 
-import aiofiles
 import yaml
+from voluptuous import Invalid
 
 from OWNd.message import OWNCommand, OWNGatewayCommand
 
@@ -34,15 +34,13 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass, config):
-    """Set up the MyHOME component."""
-    hass.data[DOMAIN] = {}
+    """Set up the MyHOME component.
 
-    if DOMAIN not in config:
-        return True
-
-    LOGGER.error("configuration.yaml not supported for this component!")
-
-    return False
+    CONFIG_SCHEMA already rejects a myhome: block in configuration.yaml, so
+    there is nothing to check here beyond preparing the shared store.
+    """
+    hass.data.setdefault(DOMAIN, {})
+    return True
 
 
 def _async_prune_registry(hass, entry, gateway_device_entry) -> None:
@@ -116,12 +114,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         else False
     )
 
+    def _load_config():
+        """Read and validate the configuration file off the event loop."""
+        with open(_config_file_path, encoding="utf-8") as yaml_file:
+            return config_schema(yaml.safe_load(yaml_file))
+
     try:
-        async with aiofiles.open(_config_file_path, mode="r") as yaml_file:
-            _validated_config = config_schema(yaml.safe_load(await yaml_file.read()))
+        _validated_config = await hass.async_add_executor_job(_load_config)
     except FileNotFoundError as err:
         raise ConfigEntryError(
             f"Configuration file '{_config_file_path}' is not present."
+        ) from err
+    except (Invalid, yaml.YAMLError) as err:
+        raise ConfigEntryError(
+            f"Configuration file '{_config_file_path}' is not valid: {err}"
         ) from err
 
     if entry.data[CONF_MAC] not in _validated_config:
@@ -224,7 +230,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             name=f"{DOMAIN} {entry.data[CONF_MAC]} event listener",
         )
 
-    hass.bus.async_listen("myhome_force_restart_event_listener", _handle_force_restart_event_listener)
+    # async_listen returns the unsubscribe callback; without registering it the
+    # handler survives the unload and every reload stacks another one, so a
+    # single SSDP announcement would restart the listener once per reload.
+    entry.async_on_unload(
+        hass.bus.async_listen(
+            "myhome_force_restart_event_listener",
+            _handle_force_restart_event_listener,
+        )
+    )
 
 
     async def handle_sync_time(call):

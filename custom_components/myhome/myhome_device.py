@@ -52,6 +52,16 @@ class MyHOMEEntity(Entity):
                 self._gateway_handler.device_registry_id
             )
 
+    @property
+    def available(self) -> bool:
+        """Whether the gateway this entity lives behind can be reached.
+
+        Without this every entity kept reporting its last known state for as
+        long as the gateway stayed away, so a shutter that had not been heard
+        from in days was indistinguishable from one that is genuinely closed.
+        """
+        return self._gateway_handler.is_connected
+
     async def async_added_to_hass(self):
         """When entity is added to hass."""
         self._hass.data[DOMAIN][self._gateway_handler.mac][CONF_PLATFORMS][self._platform][self._device_id][CONF_ENTITIES][self._platform] = self
