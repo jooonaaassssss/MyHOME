@@ -180,6 +180,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         model=gateway_handler.model,
         sw_version=gateway_handler.firmware,
     )
+    gateway_handler.device_registry_id = gateway_device_entry.id
 
     _platforms = list(hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS])
 

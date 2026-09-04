@@ -97,6 +97,9 @@ class MyHOMEGatewayHandler:
         self._terminate_sender = False
         self.is_connected = False
         self.listening_worker: asyncio.tasks.Task = None
+        # Registry id of the gateway's own device, filled in by async_setup_entry
+        # once the device exists. Entities link to it via via_device_id.
+        self.device_registry_id: str = None
         self.sending_workers: List[asyncio.tasks.Task] = []
         self.send_buffer = asyncio.Queue()
 
