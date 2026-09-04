@@ -5,7 +5,6 @@ import re
 import os
 from typing import Dict, Optional
 
-import async_timeout
 from voluptuous import (
     Schema,
     Required,
@@ -103,9 +102,9 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_test_connection()
 
         try:
-            with async_timeout.timeout(5):
+            async with asyncio.timeout(5):
                 local_gateways = await find_gateways()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return self.async_abort(reason="discovery_timeout")
 
         # Find already configured hosts
