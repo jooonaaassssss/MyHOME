@@ -295,14 +295,20 @@ async def async_unload_entry(hass, entry):
 
     LOGGER.debug("Unloading MyHOME config entry.")
 
-    for platform in hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS].keys():
-        await hass.config_entries.async_forward_entry_unload(entry, platform)
-
-    hass.services.async_remove(DOMAIN, "sync_time")
-    hass.services.async_remove(DOMAIN, "send_message")
+    if not await hass.config_entries.async_unload_platforms(
+        entry, list(hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS])
+    ):
+        LOGGER.warning("Could not unload all MyHOME platforms, keeping the entry.")
+        return False
 
     gateway_handler = hass.data[DOMAIN][entry.data[CONF_MAC]].pop(CONF_ENTITY)
     del hass.data[DOMAIN][entry.data[CONF_MAC]]
+
+    # Every entry registers the services, so only the last gateway to leave may
+    # take them down again.
+    if not hass.data[DOMAIN]:
+        hass.services.async_remove(DOMAIN, "sync_time")
+        hass.services.async_remove(DOMAIN, "send_message")
 
     return await gateway_handler.close_listener()
 

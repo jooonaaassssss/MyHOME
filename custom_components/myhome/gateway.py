@@ -379,15 +379,34 @@ class MyHOMEGatewayHandler:
                 )
 
     async def sending_loop(self, worker_id: int):
+        """Run a command worker until it is stopped or cancelled.
+
+        Mirrors ``listening_loop``: the body lives in ``_send_commands`` so the
+        session is closed on every exit path, cancellation included.
+        """
         self._terminate_sender = False
 
+        _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
+        try:
+            await self._send_commands(worker_id, _command_session)
+        finally:
+            try:
+                await _command_session.close()
+            except Exception:
+                LOGGER.debug(
+                    "%s Command session did not close cleanly.",
+                    self.log_id,
+                    exc_info=True,
+                )
+            LOGGER.debug("%s Sending worker %s stopped.", self.log_id, worker_id)
+
+    async def _send_commands(self, worker_id: int, _command_session: OWNCommandSession):
         LOGGER.debug(
             "%s Creating sending worker %s",
             self.log_id,
             worker_id,
         )
 
-        _command_session = OWNCommandSession(gateway=self.gateway, logger=LOGGER)
         await _command_session.connect()
 
         while not self._terminate_sender:
@@ -401,19 +420,17 @@ class MyHOMEGatewayHandler:
             await _command_session.send(message=task["message"], is_status_request=task["is_status_request"])
             self.send_buffer.task_done()
 
-        await _command_session.close()
-
-        LOGGER.debug(
-            "%s Destroying sending worker %s",
-            self.log_id,
-            worker_id,
-        )
-        self.sending_workers[worker_id].cancel()
-
     async def close_listener(self) -> bool:
+        """Stop the event listener and the command workers, and wait for them."""
         LOGGER.debug("%s Closing event listener and command workers", self.log_id)
         self._terminate_sender = True
         self._terminate_listener = True
+
+        await self._stop_worker(self.listening_worker)
+        self.listening_worker = None
+        for worker in self.sending_workers:
+            await self._stop_worker(worker)
+        self.sending_workers.clear()
 
         return True
 
