@@ -1,0 +1,41 @@
+# Minimal but realistic myhome.yaml used by the schema regression test.
+# One gateway with one device per supported platform.
+my_gateway:
+  mac: "00:03:50:AA:BB:CC"
+
+  light:
+    kitchen_ceiling:
+      where: "11"
+      name: Kitchen ceiling
+      dimmable: true
+
+  switch:
+    garden_socket:
+      where: "12"
+      name: Garden socket
+      class: outlet
+
+  cover:
+    living_room_shutter:
+      where: "21"
+      name: Living room shutter
+      advanced: true
+
+  binary_sensor:
+    front_door:
+      where: "31"
+      name: Front door
+      class: door
+
+  sensor:
+    main_power_meter:
+      where: "51"
+      name: Main power meter
+      class: power
+
+  climate:
+    living_room_zone:
+      zone: "1"
+      name: Living room
+      heat: true
+      cool: false
