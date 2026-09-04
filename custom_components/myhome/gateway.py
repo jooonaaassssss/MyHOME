@@ -2,7 +2,6 @@
 import asyncio
 import contextlib
 import random
-from typing import Dict, List
 
 from homeassistant.const import (
     CONF_ENTITIES,
@@ -100,11 +99,11 @@ class MyHOMEGatewayHandler:
         self._terminate_listener = False
         self._terminate_sender = False
         self.is_connected = False
-        self.listening_worker: asyncio.tasks.Task = None
+        self.listening_worker: asyncio.Task | None = None
         # Registry id of the gateway's own device, filled in by async_setup_entry
         # once the device exists. Entities link to it via via_device_id.
-        self.device_registry_id: str = None
-        self.sending_workers: List[asyncio.tasks.Task] = []
+        self.device_registry_id: str | None = None
+        self.sending_workers: list[asyncio.Task] = []
         self.send_buffer = asyncio.Queue()
 
     @property
@@ -135,7 +134,7 @@ class MyHOMEGatewayHandler:
     def firmware(self) -> str:
         return self.gateway.firmware
 
-    async def test(self) -> Dict:
+    async def test(self) -> dict:
         """Probe the gateway. A successful probe is evidence that it is reachable."""
         results = await OWNSession(gateway=self.gateway, logger=LOGGER).test_connection()
         self._set_connected(bool(results.get("Success")))

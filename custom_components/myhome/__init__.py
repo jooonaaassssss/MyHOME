@@ -34,15 +34,13 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass, config):
-    """Set up the MyHOME component."""
-    hass.data[DOMAIN] = {}
+    """Set up the MyHOME component.
 
-    if DOMAIN not in config:
-        return True
-
-    LOGGER.error("configuration.yaml not supported for this component!")
-
-    return False
+    CONFIG_SCHEMA already rejects a myhome: block in configuration.yaml, so
+    there is nothing to check here beyond preparing the shared store.
+    """
+    hass.data.setdefault(DOMAIN, {})
+    return True
 
 
 def _async_prune_registry(hass, entry, gateway_device_entry) -> None:

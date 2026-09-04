@@ -63,7 +63,7 @@ def format_mac(address: str) -> str:
     return ha_format_mac(mac)
 
 
-class MacAddress(object):
+class MacAddress:
     def __init__(self, msg=None):
         self.msg = msg
 
@@ -77,7 +77,7 @@ class MacAddress(object):
         return "MacAddress(%s, msg=%r)" % ("String", self.msg)
 
 
-class General(object):
+class General:
     def __init__(self, msg=None):
         self.msg = msg
 
@@ -91,7 +91,7 @@ class General(object):
         return "Where(%s, msg=%r)" % ("String", self.msg)
 
 
-class Area(object):
+class Area:
     def __init__(self, msg=None):
         self.msg = msg
 
@@ -105,7 +105,7 @@ class Area(object):
         return "Where(%s, msg=%r)" % ("String", self.msg)
 
 
-class Group(object):
+class Group:
     def __init__(self, msg=None):
         self.msg = msg
 
@@ -119,7 +119,7 @@ class Group(object):
         return "Where(%s, msg=%r)" % ("String", self.msg)
 
 
-class PointToPoint(object):
+class PointToPoint:
     def __init__(self, msg=None):
         self.msg = msg
 
@@ -142,7 +142,7 @@ class PointToPoint(object):
         return "Where(%s, msg=%r)" % ("String", self.msg)
 
 
-class SpecialWhere(object):
+class SpecialWhere:
     def __init__(self, msg=None):
         self.msg = msg
 
@@ -156,7 +156,7 @@ class SpecialWhere(object):
         return "Where(%s, msg=%r)" % ("String", self.msg)
 
 
-class BusInterface(object):
+class BusInterface:
     def __init__(self, msg=None):
         self.msg = msg
 
