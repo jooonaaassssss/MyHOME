@@ -5,9 +5,13 @@ import yaml
 
 from OWNd.message import OWNCommand, OWNGatewayCommand
 
-from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryError,
+    ConfigEntryNotReady,
+)
 from homeassistant.helpers import device_registry as dr, entity_registry as er, config_validation as cv
 from homeassistant.const import CONF_MAC
 
@@ -17,7 +21,6 @@ from .const import (
     CONF_PLATFORMS,
     CONF_ENTITY,
     CONF_ENTITIES,
-    CONF_GATEWAY,
     CONF_WORKER_COUNT,
     CONF_FILE_PATH,
     CONF_GENERATE_EVENTS,
@@ -28,7 +31,6 @@ from .validate import config_schema, format_mac
 from .gateway import MyHOMEGatewayHandler
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
-PLATFORMS = ["light", "switch", "cover", "climate", "binary_sensor", "sensor"]
 
 
 async def async_setup(hass, config):
@@ -43,108 +45,10 @@ async def async_setup(hass, config):
     return False
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    if entry.data[CONF_MAC] not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][entry.data[CONF_MAC]] = {}
-
-    _config_file_path = (
-        str(entry.options[CONF_FILE_PATH])
-        if CONF_FILE_PATH in entry.options
-        else "/config/myhome.yaml"
-    )
-    _generate_events = (
-        entry.options[CONF_GENERATE_EVENTS]
-        if CONF_GENERATE_EVENTS in entry.options
-        else False
-    )
-
-    try:
-        async with aiofiles.open(_config_file_path, mode="r") as yaml_file:
-            _validated_config = config_schema(yaml.safe_load(await yaml_file.read()))
-    except FileNotFoundError:
-        LOGGER.error(f"Configartion file '{_config_file_path}' is not present!")
-        return False
-
-    if entry.data[CONF_MAC] in _validated_config:
-        hass.data[DOMAIN][entry.data[CONF_MAC]] = _validated_config[
-            entry.data[CONF_MAC]
-        ]
-    else:
-        return False
-
-    # Migrating the config entry's unique_id if it was not formated to the recommended hass standard
-    if entry.unique_id != dr.format_mac(entry.unique_id):
-        hass.config_entries.async_update_entry(
-            entry, unique_id=dr.format_mac(entry.unique_id)
-        )
-        LOGGER.warning("Migrating config entry unique_id to %s", entry.unique_id)
-
-    hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY] = MyHOMEGatewayHandler(
-        hass=hass, config_entry=entry, generate_events=_generate_events
-    )
-
-    try:
-        tests_results = await hass.data[DOMAIN][entry.data[CONF_MAC]][
-            CONF_ENTITY
-        ].test()
-    except OSError as ose:
-        _gateway_handler = hass.data[DOMAIN].pop(CONF_GATEWAY)
-        _host = _gateway_handler.gateway.host
-        raise ConfigEntryNotReady(
-            f"Gateway cannot be reached at {_host}, make sure its address is correct."
-        ) from ose
-
-    if not tests_results["Success"]:
-        if (
-            tests_results["Message"] == "password_error"
-            or tests_results["Message"] == "password_required"
-        ):
-            hass.async_create_task(
-                hass.config_entries.flow.async_init(
-                    DOMAIN,
-                    context={"source": SOURCE_REAUTH},
-                    data=entry.data,
-                )
-            )
-        del hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
-        return False
-
-    _command_worker_count = (
-        int(entry.options[CONF_WORKER_COUNT])
-        if CONF_WORKER_COUNT in entry.options
-        else 1
-    )
-
+def _async_prune_registry(hass, entry, gateway_device_entry) -> None:
+    """Drop registry entries that the configuration file no longer describes."""
     entity_registry = er.async_get(hass)
     device_registry = dr.async_get(hass)
-
-    gateway_device_entry = device_registry.async_get_or_create(
-        config_entry_id=entry.entry_id,
-        connections={(dr.CONNECTION_NETWORK_MAC, entry.data[CONF_MAC])},
-        identifiers={
-            (DOMAIN, hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].unique_id)
-        },
-        manufacturer=hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].manufacturer,
-        name=hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].name,
-        model=hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].model,
-        sw_version=hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].firmware,
-    )
-
-    await hass.config_entries.async_forward_entry_setups(
-        entry, hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS].keys()
-    )
-
-    hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].listening_worker = (
-        hass.loop.create_task(
-            hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].listening_loop()
-        )
-    )
-    for i in range(_command_worker_count):
-        hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].sending_workers.append(
-            hass.loop.create_task(
-                hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].sending_loop(i)
-            )
-        )
 
     # Pruning lose entities and devices from the registry
     entity_entries = er.async_entries_for_config_entry(entity_registry, entry.entry_id)
@@ -152,8 +56,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     entities_to_be_removed = []
     devices_to_be_removed = [
         device_entry.id
-        for device_entry in device_registry.devices.values()
-        if entry.entry_id in device_entry.config_entries
+        for device_entry in dr.async_entries_for_config_entry(
+            device_registry, entry.entry_id
+        )
     ]
 
     configured_entities = []
@@ -198,21 +103,130 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         ):
             device_registry.async_remove_device(device_id)
 
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
+    _config_file_path = (
+        str(entry.options[CONF_FILE_PATH])
+        if CONF_FILE_PATH in entry.options
+        else "/config/myhome.yaml"
+    )
+    _generate_events = (
+        entry.options[CONF_GENERATE_EVENTS]
+        if CONF_GENERATE_EVENTS in entry.options
+        else False
+    )
+
+    try:
+        async with aiofiles.open(_config_file_path, mode="r") as yaml_file:
+            _validated_config = config_schema(yaml.safe_load(await yaml_file.read()))
+    except FileNotFoundError as err:
+        raise ConfigEntryError(
+            f"Configuration file '{_config_file_path}' is not present."
+        ) from err
+
+    if entry.data[CONF_MAC] not in _validated_config:
+        raise ConfigEntryError(
+            f"Gateway {entry.data[CONF_MAC]} is not configured in "
+            f"'{_config_file_path}'."
+        )
+
+    hass.data[DOMAIN][entry.data[CONF_MAC]] = _validated_config[entry.data[CONF_MAC]]
+
+    # Migrating the config entry's unique_id if it was not formated to the recommended hass standard
+    if entry.unique_id != dr.format_mac(entry.unique_id):
+        hass.config_entries.async_update_entry(
+            entry, unique_id=dr.format_mac(entry.unique_id)
+        )
+        LOGGER.warning("Migrating config entry unique_id to %s", entry.unique_id)
+
+    gateway_handler = MyHOMEGatewayHandler(
+        hass=hass, config_entry=entry, generate_events=_generate_events
+    )
+    hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY] = gateway_handler
+
+    try:
+        tests_results = await gateway_handler.test()
+    except OSError as ose:
+        hass.data[DOMAIN].pop(entry.data[CONF_MAC], None)
+        raise ConfigEntryNotReady(
+            f"Gateway cannot be reached at {gateway_handler.gateway.host}, "
+            "make sure its address is correct."
+        ) from ose
+
+    if not tests_results["Success"]:
+        hass.data[DOMAIN].pop(entry.data[CONF_MAC], None)
+        if tests_results["Message"] in ("password_error", "password_required"):
+            raise ConfigEntryAuthFailed(
+                f"Gateway {entry.data[CONF_MAC]} rejected the configured password."
+            )
+        raise ConfigEntryNotReady(
+            f"Gateway {entry.data[CONF_MAC]} is not ready: {tests_results['Message']}"
+        )
+
+    _command_worker_count = (
+        int(entry.options[CONF_WORKER_COUNT])
+        if CONF_WORKER_COUNT in entry.options
+        else 1
+    )
+
+    device_registry = dr.async_get(hass)
+
+    gateway_device_entry = device_registry.async_get_or_create(
+        config_entry_id=entry.entry_id,
+        connections={(dr.CONNECTION_NETWORK_MAC, entry.data[CONF_MAC])},
+        identifiers={(DOMAIN, gateway_handler.unique_id)},
+        manufacturer=gateway_handler.manufacturer,
+        name=gateway_handler.name,
+        model=gateway_handler.model,
+        sw_version=gateway_handler.firmware,
+    )
+    gateway_handler.device_registry_id = gateway_device_entry.id
+
+    _platforms = list(hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS])
+
+    await hass.config_entries.async_forward_entry_setups(entry, _platforms)
+
+    try:
+        gateway_handler.listening_worker = hass.loop.create_task(
+            gateway_handler.listening_loop()
+        )
+        for i in range(_command_worker_count):
+            gateway_handler.sending_workers.append(
+                hass.loop.create_task(gateway_handler.sending_loop(i))
+            )
+
+        _async_prune_registry(hass, entry, gateway_device_entry)
+    except Exception:
+        # The platforms are already forwarded at this point. Letting the failure
+        # escape as-is would leave the entry half set up, and the retry would
+        # abort with "Config entry has already been setup".
+        await gateway_handler.close_listener()
+        await hass.config_entries.async_unload_platforms(entry, _platforms)
+        hass.data[DOMAIN].pop(entry.data[CONF_MAC], None)
+        raise
+
     # Defining the services
 
-    # rdr - triggered by an ssdp event restart the listener
+    # Restart the event listener when the gateway re-announces itself over SSDP.
     async def _handle_force_restart_event_listener(event):
-        handler = hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY]
-        if handler:
-            LOGGER.info("Forzato riavvio del listener eventi (unico gateway)")
-            await hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].close_listener_only()
-            await hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_ENTITY].listening_loop()
-        else:
-            LOGGER.warning("Nessun handler trovato per riavvio evento")
-            
+        handler = hass.data[DOMAIN].get(entry.data[CONF_MAC], {}).get(CONF_ENTITY)
+        if handler is None:
+            LOGGER.warning(
+                "No gateway handler found, cannot restart the event listener."
+            )
+            return
+
+        LOGGER.debug("Restarting the event listener after an SSDP announcement.")
+        await handler.close_listener_only()
+        handler.listening_worker = entry.async_create_background_task(
+            hass,
+            handler.listening_loop(),
+            name=f"{DOMAIN} {entry.data[CONF_MAC]} event listener",
+        )
+
     hass.bus.async_listen("myhome_force_restart_event_listener", _handle_force_restart_event_listener)
 
-    
+
     async def handle_sync_time(call):
         gateway = call.data.get(ATTR_GATEWAY, None)
         if gateway is None:
@@ -288,17 +302,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 async def async_unload_entry(hass, entry):
     """Unload a config entry."""
 
-    LOGGER.info("Unloading MyHome entry.")
+    LOGGER.debug("Unloading MyHOME config entry.")
 
-    for platform in hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS].keys():
-        await hass.config_entries.async_forward_entry_unload(entry, platform)
-
-    hass.services.async_remove(DOMAIN, "sync_time")
-    hass.services.async_remove(DOMAIN, "send_message")
+    if not await hass.config_entries.async_unload_platforms(
+        entry, list(hass.data[DOMAIN][entry.data[CONF_MAC]][CONF_PLATFORMS])
+    ):
+        LOGGER.warning("Could not unload all MyHOME platforms, keeping the entry.")
+        return False
 
     gateway_handler = hass.data[DOMAIN][entry.data[CONF_MAC]].pop(CONF_ENTITY)
     del hass.data[DOMAIN][entry.data[CONF_MAC]]
 
+    # Every entry registers the services, so only the last gateway to leave may
+    # take them down again.
+    if not hass.data[DOMAIN]:
+        hass.services.async_remove(DOMAIN, "sync_time")
+        hass.services.async_remove(DOMAIN, "send_message")
+
     return await gateway_handler.close_listener()
-
-

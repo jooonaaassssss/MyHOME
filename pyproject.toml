@@ -1,0 +1,11 @@
+[tool.ruff]
+# The integration writes long single-line expressions throughout. Running the
+# formatter, or ruff's full default rule set, would rewrite most of the package
+# and make the diff against upstream unreadable. CI therefore lints with
+# pyflakes and the syntax/runtime checks only: the rules that find real defects
+# rather than restyle working code.
+line-length = 200
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]

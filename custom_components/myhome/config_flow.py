@@ -5,7 +5,6 @@ import re
 import os
 from typing import Dict, Optional
 
-import async_timeout
 from voluptuous import (
     Schema,
     Required,
@@ -13,7 +12,6 @@ from voluptuous import (
     All,
     In,
     Range,
-    IsFile,
 )
 from homeassistant.config_entries import (
     CONN_CLASS_LOCAL_PUSH,
@@ -79,7 +77,7 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return MyhomeOptionsFlowHandler(config_entry)
+        return MyhomeOptionsFlowHandler()
 
     def __init__(self):
         """Initialize the MyHome flow."""
@@ -104,9 +102,9 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             return await self.async_step_test_connection()
 
         try:
-            with async_timeout.timeout(5):
+            async with asyncio.timeout(5):
                 local_gateways = await find_gateways()
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return self.async_abort(reason="discovery_timeout")
 
         # Find already configured hosts
@@ -360,10 +358,10 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
             CONF_FIRMWARE: gateway.firmware,
         }
 
-        # rdr - listener restart request
-        LOGGER.info("rdr - requesting listener restart")
+        # The gateway just re-announced itself, its event connection is stale.
+        LOGGER.debug("Gateway announced itself over SSDP, requesting a listener restart.")
         self.hass.bus.async_fire("myhome_force_restart_event_listener")
-      
+
         if gateway.port is not None:
             updatable[CONF_PORT] = gateway.port
 
@@ -379,20 +377,20 @@ class MyhomeFlowHandler(ConfigFlow, domain=DOMAIN):
 class MyhomeOptionsFlowHandler(OptionsFlow):
     """Handle MyHome options."""
 
-    def __init__(self, config_entry):
+    def __init__(self):
         """Initialize MyHome options flow."""
-        self.config_entry = config_entry
-        self.options = dict(config_entry.options)
-        self.data = dict(config_entry.data)
-        if CONF_WORKER_COUNT not in self.options:
-            self.options[CONF_WORKER_COUNT] = 1
-        if CONF_FILE_PATH not in self.options:
-            self.options[CONF_FILE_PATH] = "/config/myhome.yaml"
-        if CONF_GENERATE_EVENTS not in self.options:
-            self.options[CONF_GENERATE_EVENTS] = False
+        self.options: Dict = {}
+        self.data: Dict = {}
 
     async def async_step_init(self, user_input=None):  # pylint: disable=unused-argument
         """Manage the MyHome options."""
+        # config_entry is a read-only property on OptionsFlow and is not available
+        # during __init__, so the snapshot is taken on the first step instead.
+        self.options = dict(self.config_entry.options)
+        self.data = dict(self.config_entry.data)
+        self.options.setdefault(CONF_WORKER_COUNT, 1)
+        self.options.setdefault(CONF_FILE_PATH, "/config/myhome.yaml")
+        self.options.setdefault(CONF_GENERATE_EVENTS, False)
         return await self.async_step_user()
 
     async def async_step_user(self, user_input=None, errors={}):  # pylint: disable=dangerous-default-value
@@ -452,5 +450,3 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
             ),
             errors=errors,
         )
-
-
