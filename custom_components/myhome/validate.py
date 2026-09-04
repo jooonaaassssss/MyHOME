@@ -421,15 +421,37 @@ climate_schema = MyHomeDeviceSchema(
     }
 )
 
+def post_processed(schema):
+    """Wrap a schema so that its overridden ``__call__`` is always executed.
+
+    ``MyHomeDeviceSchema`` and ``MyHomeSensorSchema`` do their real work in
+    ``__call__``, after ``Schema.__call__`` has validated the data: rekeying the
+    devices to ``who-where`` and injecting the ``entities``, ``icon``, ``icon_on``,
+    ``entity_name`` and ``model`` defaults that the platforms read unguarded.
+
+    A validation engine is free to compile a nested schema from its declaration
+    instead of invoking it. Voluptuous treats a nested ``Schema`` as a callable and
+    calls it, but probatio -- which Home Assistant Core 2026.9 installs in place of
+    voluptuous -- compiles it, so the override never runs and the post-processing is
+    silently skipped. Hiding the schema behind a plain callable leaves both engines
+    no choice but to call it.
+    """
+
+    def validator(data):
+        return schema(data)
+
+    return validator
+
+
 gateway_schema = Schema(
     {
         Required(CONF_MAC): MacAddress(),
-        Optional(LIGHT): light_schema,
-        Optional(SWITCH): switch_schema,
-        Optional(COVER): cover_schema,
-        Optional(BINARY_SENSOR): binary_sensor_schema,
-        Optional(SENSOR): sensor_schema,
-        Optional(CLIMATE): climate_schema,
+        Optional(LIGHT): post_processed(light_schema),
+        Optional(SWITCH): post_processed(switch_schema),
+        Optional(COVER): post_processed(cover_schema),
+        Optional(BINARY_SENSOR): post_processed(binary_sensor_schema),
+        Optional(SENSOR): post_processed(sensor_schema),
+        Optional(CLIMATE): post_processed(climate_schema),
     }
 )
 
