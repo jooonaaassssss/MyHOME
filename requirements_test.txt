@@ -1,0 +1,7 @@
+# Dependencies for the schema regression tests. Home Assistant itself is not
+# needed: tests/ha_stubs.py provides the handful of constants validate.py uses.
+probatio==0.11.4
+pytest==9.1.1
+PyYAML==6.0.3
+ruff==0.16.6
+voluptuous==0.15.2
