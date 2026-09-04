@@ -54,7 +54,7 @@ The upstream wiki still applies to this fork; the YAML syntax is unchanged.
 
 ## Changes in this fork
 
-Modified on **4 September 2026**, released as 0.9.4. The full record is in the
+Modified on **4 September 2026**, released as 0.9.5. The full record is in the
 Git history; this is the summary.
 
 **Setup no longer fails on Home Assistant Core 2026.9.** That release swapped
@@ -121,4 +121,5 @@ FOR A PARTICULAR PURPOSE. See the [LICENSE](LICENSE) file for the full text.
 The complete corresponding source for this version is this repository:
 <https://github.com/jooonaaassssss/MyHOME>.
 
-The `LICENSE` file is carried over from the original project unchanged.
+The `LICENSE` file is carried over from the original project byte for byte;
+`.gitattributes` keeps it out of the repository's line-ending normalisation.
