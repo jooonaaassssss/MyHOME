@@ -399,7 +399,9 @@ class MyhomeOptionsFlowHandler(OptionsFlow):
         errors = {}
 
         if user_input is not None:
-            if not os.path.isfile(user_input[CONF_FILE_PATH]):
+            if not await self.hass.async_add_executor_job(
+                os.path.isfile, user_input[CONF_FILE_PATH]
+            ):
                 errors[CONF_FILE_PATH] = "invalid_config_path"
 
             self.options.update({CONF_WORKER_COUNT: user_input[CONF_WORKER_COUNT]})
